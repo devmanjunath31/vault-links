@@ -12,6 +12,7 @@ interface AddBookmarkFormProps {
   urlInputRef: React.RefObject<HTMLInputElement | null>
   collections: Collection[]
   activeCollectionId: string | null
+  onSuccess?: () => void
 }
 
 interface FetchedMeta {
@@ -25,6 +26,7 @@ export default function AddBookmarkForm({
   urlInputRef,
   collections,
   activeCollectionId,
+  onSuccess,
 }: AddBookmarkFormProps) {
   const [url, setUrl]                   = useState('')
   const [title, setTitle]               = useState('')
@@ -170,7 +172,10 @@ export default function AddBookmarkForm({
       setIsDuplicate(false)
       setStrippedCount(0)
       setSuccess(true)
-      setTimeout(() => setSuccess(false), 2500)
+      setTimeout(() => {
+        setSuccess(false)
+        onSuccess?.()
+      }, 1200)
     }
 
     setIsSubmitting(false)
@@ -181,11 +186,11 @@ export default function AddBookmarkForm({
   return (
     <form
       onSubmit={handleSubmit}
-      className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm overflow-hidden"
+      className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm"
     >
       {/* OG image preview banner */}
       {meta?.og_image && (
-        <div className="relative h-28 bg-slate-100 dark:bg-slate-700 overflow-hidden">
+        <div className="relative h-28 bg-slate-100 dark:bg-slate-700 overflow-hidden rounded-t-2xl">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={meta.og_image}
@@ -318,7 +323,7 @@ export default function AddBookmarkForm({
             </button>
 
             {showCollectionPicker && (
-              <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg z-10 py-1">
+              <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg z-60 py-1">
                 <button
                   type="button"
                   onClick={() => { setCollectionId(null); setShowCollectionPicker(false) }}
