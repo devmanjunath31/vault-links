@@ -27,6 +27,7 @@ export default async function SettingsPage() {
     theme: 'system',
     accent_color: '#3b82f6',
     notify_dead_links: false,
+    view_density: 'comfortable' as const,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   }

@@ -23,17 +23,29 @@ function extractMetaName(html: string, name: string): string {
   return reversed ? reversed[1].trim() : ''
 }
 
+function estimateReadingTime(html: string): number | null {
+  const text = html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  const wordCount = text.split(' ').filter(Boolean).length
+  if (wordCount < 50) return null
+  return Math.ceil(wordCount / 200)
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const url = searchParams.get('url')
 
   if (!url) {
-    return NextResponse.json({ title: '', og_image: null, description: null }, { status: 400 })
+    return NextResponse.json({ title: '', og_image: null, description: null, reading_time_minutes: null }, { status: 400 })
   }
 
   try {
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 6000)
+    const timeoutId = setTimeout(() => controller.abort(), 8000)
 
     const response = await fetch(url, {
       signal: controller.signal,
@@ -46,12 +58,12 @@ export async function GET(request: NextRequest) {
     clearTimeout(timeoutId)
 
     if (!response.ok) {
-      return NextResponse.json({ title: '', og_image: null, description: null })
+      return NextResponse.json({ title: '', og_image: null, description: null, reading_time_minutes: null })
     }
 
-    // Only read first 50 KB — meta tags are always in <head>
+    // Read first 150 KB — enough for meta tags + body word count estimation
     const buffer = await response.arrayBuffer()
-    const html = new TextDecoder().decode(buffer.slice(0, 50_000))
+    const html = new TextDecoder().decode(buffer.slice(0, 150_000))
 
     const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i)
     const title = titleMatch ? titleMatch[1].trim() : ''
@@ -62,8 +74,10 @@ export async function GET(request: NextRequest) {
       extractMetaName(html, 'description') ||
       null
 
-    return NextResponse.json({ title, og_image, description })
+    const reading_time_minutes = estimateReadingTime(html)
+
+    return NextResponse.json({ title, og_image, description, reading_time_minutes })
   } catch {
-    return NextResponse.json({ title: '', og_image: null, description: null })
+    return NextResponse.json({ title: '', og_image: null, description: null, reading_time_minutes: null })
   }
 }

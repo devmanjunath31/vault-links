@@ -22,5 +22,7 @@ export interface Bookmark {
   github_meta: GitHubMeta | null
   is_dead: boolean
   last_checked_at: string | null
+  reading_time_minutes: number | null
+  notes: string | null
   created_at: string
 }

@@ -1,21 +1,23 @@
 'use client'
 
 import { useMemo, useState, useEffect, useCallback } from 'react'
-import { useBookmarks } from '@/hooks/useBookmarks'
 import BookmarkCard from '@/components/BookmarkCard'
 import type { Bookmark } from '@/types/bookmark'
 import {
   Bookmark as BookmarkIcon, Search, Globe, LayoutGrid, List,
-  BookOpen, Tag, X,
+  BookOpen, Tag, X, Download, Clock,
 } from 'lucide-react'
 
-type SortOrder = 'newest' | 'oldest' | 'alpha' | 'most-visited'
+type SortOrder = 'newest' | 'oldest' | 'alpha' | 'most-visited' | 'reading-time'
+type Density = 'compact' | 'comfortable' | 'cozy'
 
 interface BookmarkListProps {
-  initialBookmarks: Bookmark[]
-  userId: string
+  bookmarks: Bookmark[]
+  updateBookmark: (id: string, patch: Partial<Bookmark>) => void
+  removeBookmark: (id: string) => void
   searchInputRef: React.RefObject<HTMLInputElement | null>
   activeCollectionId: string | null
+  onExportCSV: () => void
 }
 
 function getDomain(url: string): string {
@@ -23,13 +25,16 @@ function getDomain(url: string): string {
 }
 
 function useLocalStorage<T>(key: string, fallback: T): [T, (v: T) => void] {
-  const [value, setValue] = useState<T>(() => {
-    if (typeof window === 'undefined') return fallback
+  // Always start with fallback so server and first client render match (avoids hydration mismatch).
+  // Sync from localStorage after hydration in useEffect.
+  const [value, setValue] = useState<T>(fallback)
+
+  useEffect(() => {
     try {
       const stored = localStorage.getItem(key)
-      return stored ? (JSON.parse(stored) as T) : fallback
-    } catch { return fallback }
-  })
+      if (stored !== null) setValue(JSON.parse(stored) as T)
+    } catch { /* noop */ }
+  }, [key])
 
   const set = useCallback((v: T) => {
     setValue(v)
@@ -39,17 +44,26 @@ function useLocalStorage<T>(key: string, fallback: T): [T, (v: T) => void] {
   return [value, set]
 }
 
+const DENSITY_OPTIONS: { value: Density; label: string }[] = [
+  { value: 'compact', label: 'S' },
+  { value: 'comfortable', label: 'M' },
+  { value: 'cozy', label: 'L' },
+]
+
 export default function BookmarkList({
-  initialBookmarks,
-  userId,
+  bookmarks,
+  updateBookmark,
+  removeBookmark,
   searchInputRef,
   activeCollectionId,
+  onExportCSV,
 }: BookmarkListProps) {
-  const { bookmarks, updateBookmark, removeBookmark } = useBookmarks(initialBookmarks, userId)
   const [query, setQuery] = useState('')
   const [sort, setSort] = useLocalStorage<SortOrder>('bm-sort', 'newest')
   const [viewMode, setViewMode] = useLocalStorage<'grid' | 'list'>('bm-view', 'grid')
+  const [density, setDensity] = useLocalStorage<Density>('bm-density', 'comfortable')
   const [readingListOnly, setReadingListOnly] = useState(false)
+  const [quickReadsOnly, setQuickReadsOnly] = useState(false)
   const [activeTag, setActiveTag] = useState<string | null>(null)
 
   // When sidebar switches to Reading List, toggle filter
@@ -78,6 +92,10 @@ export default function BookmarkList({
       }
       // Reading list filter
       if (readingListOnly && b.is_read) return false
+      // Quick reads filter (≤5 min, must have reading time)
+      if (quickReadsOnly) {
+        if (!b.reading_time_minutes || b.reading_time_minutes > 5) return false
+      }
       // Tag filter
       if (activeTag && !(b.tags ?? []).includes(activeTag)) return false
       // Text search
@@ -99,12 +117,17 @@ export default function BookmarkList({
       if (sort === 'oldest') return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       if (sort === 'alpha') return a.title.localeCompare(b.title)
       if (sort === 'most-visited') return b.click_count - a.click_count
+      if (sort === 'reading-time') {
+        const at = a.reading_time_minutes ?? Infinity
+        const bt = b.reading_time_minutes ?? Infinity
+        return at - bt
+      }
       // newest (default)
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     }
 
     return [...pinned.sort(sortFn), ...rest.sort(sortFn)]
-  }, [bookmarks, query, sort, activeCollectionId, readingListOnly, activeTag])
+  }, [bookmarks, query, sort, activeCollectionId, readingListOnly, quickReadsOnly, activeTag])
 
   const isEmpty = bookmarks.length === 0
   const noResults = !isEmpty && filtered.length === 0
@@ -115,14 +138,14 @@ export default function BookmarkList({
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
         <div className="relative mb-6">
-          <div className="w-20 h-20 rounded-3xl bg-linear-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+          <div className="w-20 h-20 rounded-3xl bg-linear-to-br from-blue-50 to-indigo-100 dark:from-blue-950 dark:to-indigo-900 flex items-center justify-center">
             <BookmarkIcon size={32} className="text-blue-300" />
           </div>
           <div className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center">
             <span className="text-white text-xs font-bold">+</span>
           </div>
         </div>
-        <p className="text-slate-700 font-semibold text-base">No bookmarks yet</p>
+        <p className="text-slate-700 dark:text-slate-300 font-semibold text-base">No bookmarks yet</p>
         <p className="text-slate-400 text-sm mt-1.5 max-w-xs leading-relaxed">
           Paste any URL above to save your first bookmark. Titles are fetched automatically.
         </p>
@@ -135,30 +158,30 @@ export default function BookmarkList({
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2">
         {/* Stats */}
-        <div className="flex items-center gap-3 bg-white border border-slate-200 rounded-2xl px-4 py-2.5 shadow-sm shrink-0">
+        <div className="flex items-center gap-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-2.5 shadow-sm shrink-0">
           <div className="flex items-center gap-1.5">
-            <div className="w-6 h-6 rounded-md bg-blue-50 flex items-center justify-center">
+            <div className="w-6 h-6 rounded-md bg-blue-50 dark:bg-blue-950 flex items-center justify-center">
               <LayoutGrid size={11} className="text-blue-500" />
             </div>
-            <span className="text-sm font-bold text-slate-900">{bookmarks.length}</span>
+            <span className="text-sm font-bold text-slate-900 dark:text-slate-100">{bookmarks.length}</span>
             <span className="text-xs text-slate-400">saved</span>
           </div>
-          <div className="w-px h-6 bg-slate-100" />
+          <div className="w-px h-6 bg-slate-100 dark:bg-slate-700" />
           <div className="flex items-center gap-1.5">
-            <div className="w-6 h-6 rounded-md bg-violet-50 flex items-center justify-center">
+            <div className="w-6 h-6 rounded-md bg-violet-50 dark:bg-violet-950 flex items-center justify-center">
               <Globe size={11} className="text-violet-500" />
             </div>
-            <span className="text-sm font-bold text-slate-900">{uniqueDomains}</span>
+            <span className="text-sm font-bold text-slate-900 dark:text-slate-100">{uniqueDomains}</span>
             <span className="text-xs text-slate-400">domains</span>
           </div>
           {unreadCount > 0 && (
             <>
-              <div className="w-px h-6 bg-slate-100" />
+              <div className="w-px h-6 bg-slate-100 dark:bg-slate-700" />
               <div className="flex items-center gap-1.5">
-                <div className="w-6 h-6 rounded-md bg-indigo-50 flex items-center justify-center">
+                <div className="w-6 h-6 rounded-md bg-indigo-50 dark:bg-indigo-950 flex items-center justify-center">
                   <BookOpen size={11} className="text-indigo-500" />
                 </div>
-                <span className="text-sm font-bold text-slate-900">{unreadCount}</span>
+                <span className="text-sm font-bold text-slate-900 dark:text-slate-100">{unreadCount}</span>
                 <span className="text-xs text-slate-400">unread</span>
               </div>
             </>
@@ -177,52 +200,94 @@ export default function BookmarkList({
             placeholder="Search…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="w-full bg-white border border-slate-200 rounded-2xl pl-9 pr-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all shadow-sm"
+            className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl pl-9 pr-3 py-2.5 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all shadow-sm"
           />
         </div>
 
-        {/* Reading list toggle */}
+        {/* Unread toggle */}
         <button
           onClick={() => setReadingListOnly((v) => !v)}
           className={`flex items-center gap-1.5 border rounded-2xl px-3 py-2.5 text-xs font-medium transition-all shadow-sm whitespace-nowrap ${
             readingListOnly
               ? 'bg-indigo-600 border-indigo-600 text-white'
-              : 'bg-white border-slate-200 text-slate-500 hover:text-slate-800 hover:border-slate-300'
+              : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600'
           }`}
         >
           <BookOpen size={13} />
           Unread
         </button>
 
+        {/* Quick reads toggle */}
+        <button
+          onClick={() => setQuickReadsOnly((v) => !v)}
+          title="Show only bookmarks ≤5 min reading time"
+          className={`flex items-center gap-1.5 border rounded-2xl px-3 py-2.5 text-xs font-medium transition-all shadow-sm whitespace-nowrap ${
+            quickReadsOnly
+              ? 'bg-emerald-600 border-emerald-600 text-white'
+              : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600'
+          }`}
+        >
+          <Clock size={13} />
+          Quick reads
+        </button>
+
         {/* Sort */}
         <select
           value={sort}
           onChange={(e) => setSort(e.target.value as SortOrder)}
-          className="bg-white border border-slate-200 rounded-2xl px-3 py-2.5 text-xs font-medium text-slate-500 hover:border-slate-300 transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 cursor-pointer"
+          className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl px-3 py-2.5 text-xs font-medium text-slate-500 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600 transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 cursor-pointer"
         >
           <option value="newest">Newest</option>
           <option value="oldest">Oldest</option>
           <option value="alpha">A → Z</option>
           <option value="most-visited">Most visited</option>
+          <option value="reading-time">Shortest read</option>
         </select>
 
+        {/* Density */}
+        <div className="flex bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm" title="Card density">
+          {DENSITY_OPTIONS.map(({ value, label }, i) => (
+            <button
+              key={value}
+              onClick={() => setDensity(value)}
+              title={value.charAt(0).toUpperCase() + value.slice(1)}
+              className={`px-2.5 py-2 text-xs font-semibold transition-colors ${i > 0 ? 'border-l border-slate-200 dark:border-slate-700' : ''} ${
+                density === value
+                  ? 'bg-slate-900 dark:bg-slate-200 text-white dark:text-slate-900'
+                  : 'text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
         {/* View mode toggle */}
-        <div className="flex bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+        <div className="flex bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm">
           <button
             onClick={() => setViewMode('grid')}
-            className={`p-2.5 transition-colors ${viewMode === 'grid' ? 'bg-slate-900 text-white' : 'text-slate-400 hover:text-slate-700'}`}
+            className={`p-2.5 transition-colors ${viewMode === 'grid' ? 'bg-slate-900 dark:bg-slate-200 text-white dark:text-slate-900' : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
             title="Grid view"
           >
             <LayoutGrid size={13} />
           </button>
           <button
             onClick={() => setViewMode('list')}
-            className={`p-2.5 transition-colors ${viewMode === 'list' ? 'bg-slate-900 text-white' : 'text-slate-400 hover:text-slate-700'}`}
+            className={`p-2.5 transition-colors ${viewMode === 'list' ? 'bg-slate-900 dark:bg-slate-200 text-white dark:text-slate-900' : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
             title="List view"
           >
             <List size={13} />
           </button>
         </div>
+
+        {/* CSV export */}
+        <button
+          onClick={onExportCSV}
+          title="Export as CSV"
+          className="p-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600 transition-all"
+        >
+          <Download size={13} />
+        </button>
       </div>
 
       {/* Tag filter pills */}
@@ -235,7 +300,7 @@ export default function BookmarkList({
               className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium transition-all ${
                 activeTag === tag
                   ? 'bg-indigo-600 text-white'
-                  : 'bg-white border border-slate-200 text-slate-500 hover:border-indigo-300 hover:text-indigo-600'
+                  : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-indigo-300 hover:text-indigo-600 dark:hover:text-indigo-400'
               }`}
             >
               <Tag size={10} />
@@ -249,10 +314,10 @@ export default function BookmarkList({
       {/* No results */}
       {noResults && (
         <div className="flex flex-col items-center justify-center py-14 text-center">
-          <Search size={24} className="text-slate-200 mb-3" />
-          <p className="text-slate-500 font-medium text-sm">No results found</p>
+          <Search size={24} className="text-slate-200 dark:text-slate-700 mb-3" />
+          <p className="text-slate-500 dark:text-slate-400 font-medium text-sm">No results found</p>
           <button
-            onClick={() => { setQuery(''); setActiveTag(null) }}
+            onClick={() => { setQuery(''); setActiveTag(null); setQuickReadsOnly(false) }}
             className="mt-2 text-xs text-blue-500 hover:text-blue-700 transition-colors"
           >
             Clear filters
@@ -261,7 +326,7 @@ export default function BookmarkList({
       )}
 
       {/* Results count */}
-      {filtered.length > 0 && (query || activeTag || readingListOnly) && (
+      {filtered.length > 0 && (query || activeTag || readingListOnly || quickReadsOnly) && (
         <p className="text-xs text-slate-400 px-0.5">
           {filtered.length} of {bookmarks.length} bookmarks
         </p>
@@ -281,6 +346,7 @@ export default function BookmarkList({
               key={bookmark.id}
               bookmark={bookmark}
               viewMode={viewMode}
+              density={density}
               onDelete={removeBookmark}
               onUpdate={updateBookmark}
             />

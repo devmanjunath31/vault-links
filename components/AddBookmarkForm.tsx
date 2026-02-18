@@ -2,8 +2,9 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { normalizeUrl, autoTagsForUrl } from '@/lib/url-normalize'
 import {
-  Plus, Loader2, Link2, AlertTriangle, X, ChevronDown, Folder,
+  Plus, Loader2, Link2, AlertTriangle, X, ChevronDown, Folder, ShieldCheck,
 } from 'lucide-react'
 import type { Collection } from '@/types/collection'
 
@@ -17,6 +18,7 @@ interface FetchedMeta {
   title: string
   og_image: string | null
   description: string | null
+  reading_time_minutes?: number | null
 }
 
 export default function AddBookmarkForm({
@@ -31,6 +33,7 @@ export default function AddBookmarkForm({
   const [collectionId, setCollectionId] = useState<string | null>(activeCollectionId)
   const [meta, setMeta]                 = useState<FetchedMeta | null>(null)
   const [isDuplicate, setIsDuplicate]   = useState(false)
+  const [strippedCount, setStrippedCount] = useState(0)
   const [isLoadingMeta, setIsLoadingMeta] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError]               = useState<string | null>(null)
@@ -58,19 +61,36 @@ export default function AddBookmarkForm({
   }, [])
 
   async function handleUrlBlur() {
-    const trimmed = url.trim()
-    if (!trimmed) return
-    try { new URL(trimmed) } catch { return }
+    const raw = url.trim()
+    if (!raw) return
+    try { new URL(raw) } catch { return }
+
+    // Normalize URL (strip tracking params)
+    const { url: normalized, strippedCount: stripped } = normalizeUrl(raw)
+    if (normalized !== raw) setUrl(normalized)
+    setStrippedCount(stripped)
 
     setIsLoadingMeta(true)
     setMeta(null)
     setIsDuplicate(false)
 
+    // Auto-suggest tags from domain
+    const suggested = autoTagsForUrl(normalized)
+    if (suggested.length > 0) {
+      setTags((prev) => {
+        const merged = [...prev]
+        for (const t of suggested) {
+          if (!merged.includes(t)) merged.push(t)
+        }
+        return merged
+      })
+    }
+
     const [fetchRes, dupRes] = await Promise.all([
-      fetch(`/api/fetch-title?url=${encodeURIComponent(trimmed)}`)
+      fetch(`/api/fetch-title?url=${encodeURIComponent(normalized)}`)
         .then((r) => r.json() as Promise<FetchedMeta>)
-        .catch(() => ({ title: '', og_image: null, description: null } as FetchedMeta)),
-      supabase.from('bookmarks').select('id').eq('url', trimmed).limit(1),
+        .catch(() => ({ title: '', og_image: null, description: null, reading_time_minutes: null } as FetchedMeta)),
+      supabase.from('bookmarks').select('id').eq('url', normalized).limit(1),
     ])
 
     if (fetchRes.title && !title) setTitle(fetchRes.title)
@@ -99,8 +119,12 @@ export default function AddBookmarkForm({
     setError(null)
     setSuccess(false)
 
-    const trimmedUrl = url.trim()
-    try { new URL(trimmedUrl) } catch {
+    const raw = url.trim()
+    let normalized = raw
+    try {
+      new URL(raw)
+      normalized = normalizeUrl(raw).url
+    } catch {
       setError('Please enter a valid URL (include https://)')
       return
     }
@@ -119,11 +143,11 @@ export default function AddBookmarkForm({
     }
 
     let domain = ''
-    try { domain = new URL(trimmedUrl).hostname } catch { /* noop */ }
+    try { domain = new URL(normalized).hostname } catch { /* noop */ }
 
     const { error: insertError } = await supabase.from('bookmarks').insert({
       user_id: user.id,
-      url: trimmedUrl,
+      url: normalized,
       title: title.trim(),
       favicon_url: domain
         ? `https://www.google.com/s2/favicons?domain=${domain}&sz=32`
@@ -132,6 +156,7 @@ export default function AddBookmarkForm({
       description: meta?.description ?? null,
       tags,
       collection_id: collectionId,
+      reading_time_minutes: meta?.reading_time_minutes ?? null,
     })
 
     if (insertError) {
@@ -143,6 +168,7 @@ export default function AddBookmarkForm({
       setTagInput('')
       setMeta(null)
       setIsDuplicate(false)
+      setStrippedCount(0)
       setSuccess(true)
       setTimeout(() => setSuccess(false), 2500)
     }
@@ -155,11 +181,11 @@ export default function AddBookmarkForm({
   return (
     <form
       onSubmit={handleSubmit}
-      className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden"
+      className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm overflow-hidden"
     >
       {/* OG image preview banner */}
       {meta?.og_image && (
-        <div className="relative h-28 bg-slate-100 overflow-hidden">
+        <div className="relative h-28 bg-slate-100 dark:bg-slate-700 overflow-hidden">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={meta.og_image}
@@ -179,20 +205,28 @@ export default function AddBookmarkForm({
       <div className="p-5 space-y-3">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <h2 className="font-semibold text-slate-800 text-sm">Add Bookmark</h2>
-          {success && (
-            <span className="text-xs text-emerald-600 font-medium flex items-center gap-1 animate-fade-in-up">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-              Saved!
-            </span>
-          )}
+          <h2 className="font-semibold text-slate-800 dark:text-slate-100 text-sm">Add Bookmark</h2>
+          <div className="flex items-center gap-2">
+            {strippedCount > 0 && (
+              <span className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950 border border-emerald-200 dark:border-emerald-800 rounded-full px-2 py-0.5">
+                <ShieldCheck size={10} />
+                {strippedCount} tracking param{strippedCount !== 1 ? 's' : ''} removed
+              </span>
+            )}
+            {success && (
+              <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1 animate-fade-in-up">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+                Saved!
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Duplicate warning */}
         {isDuplicate && (
-          <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-xs text-amber-700">
+          <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-xl px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
             <AlertTriangle size={13} className="shrink-0" />
             <span>This URL is already in your bookmarks.</span>
           </div>
@@ -211,7 +245,7 @@ export default function AddBookmarkForm({
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               onBlur={handleUrlBlur}
-              className="w-full border border-slate-200 rounded-xl pl-8 pr-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all bg-slate-50 focus:bg-white"
+              className="w-full border border-slate-200 dark:border-slate-600 rounded-xl pl-8 pr-3 py-2.5 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all bg-slate-50 dark:bg-slate-700 focus:bg-white dark:focus:bg-slate-600"
             />
           </div>
 
@@ -221,7 +255,7 @@ export default function AddBookmarkForm({
               placeholder="Title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="w-full border border-slate-200 rounded-xl pl-3 pr-8 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all bg-slate-50 focus:bg-white"
+              className="w-full border border-slate-200 dark:border-slate-600 rounded-xl pl-3 pr-8 py-2.5 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all bg-slate-50 dark:bg-slate-700 focus:bg-white dark:focus:bg-slate-600"
             />
             {isLoadingMeta && (
               <Loader2
@@ -244,11 +278,11 @@ export default function AddBookmarkForm({
         {/* Tags + Collection row */}
         <div className="flex flex-col sm:flex-row gap-2.5">
           {/* Tags chip input */}
-          <div className="flex-1 flex flex-wrap items-center gap-1.5 min-h-9 border border-slate-200 rounded-xl px-2.5 py-1.5 bg-slate-50 focus-within:ring-2 focus-within:ring-blue-500/30 focus-within:border-blue-400 focus-within:bg-white transition-all">
+          <div className="flex-1 flex flex-wrap items-center gap-1.5 min-h-9 border border-slate-200 dark:border-slate-600 rounded-xl px-2.5 py-1.5 bg-slate-50 dark:bg-slate-700 focus-within:ring-2 focus-within:ring-blue-500/30 focus-within:border-blue-400 focus-within:bg-white dark:focus-within:bg-slate-600 transition-all">
             {tags.map((tag) => (
               <span
                 key={tag}
-                className="flex items-center gap-1 bg-indigo-50 text-indigo-700 text-xs px-2 py-0.5 rounded-full font-medium"
+                className="flex items-center gap-1 bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 text-xs px-2 py-0.5 rounded-full font-medium"
               >
                 #{tag}
                 <button
@@ -267,7 +301,7 @@ export default function AddBookmarkForm({
               onChange={(e) => setTagInput(e.target.value)}
               onKeyDown={handleTagKeyDown}
               onBlur={() => { if (tagInput) addTag(tagInput) }}
-              className="flex-1 min-w-20 text-sm text-slate-900 placeholder:text-slate-400 bg-transparent outline-none"
+              className="flex-1 min-w-20 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 bg-transparent outline-none"
             />
           </div>
 
@@ -276,7 +310,7 @@ export default function AddBookmarkForm({
             <button
               type="button"
               onClick={() => setShowCollectionPicker((v) => !v)}
-              className="flex items-center gap-2 border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-600 hover:border-slate-300 bg-slate-50 hover:bg-white transition-all whitespace-nowrap"
+              className="flex items-center gap-2 border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2.5 text-sm text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-500 bg-slate-50 dark:bg-slate-700 hover:bg-white dark:hover:bg-slate-600 transition-all whitespace-nowrap"
             >
               <Folder size={13} style={activeCollection ? { color: activeCollection.color } : undefined} className={activeCollection ? '' : 'text-slate-400'} />
               <span className="truncate max-w-32">{activeCollection?.name ?? 'No collection'}</span>
@@ -284,11 +318,11 @@ export default function AddBookmarkForm({
             </button>
 
             {showCollectionPicker && (
-              <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-slate-200 rounded-xl shadow-lg z-10 py-1">
+              <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg z-10 py-1">
                 <button
                   type="button"
                   onClick={() => { setCollectionId(null); setShowCollectionPicker(false) }}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 transition-colors"
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
                 >
                   <Folder size={13} className="text-slate-300" />
                   No collection
@@ -298,7 +332,7 @@ export default function AddBookmarkForm({
                     key={c.id}
                     type="button"
                     onClick={() => { setCollectionId(c.id); setShowCollectionPicker(false) }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
                   >
                     <Folder size={13} style={{ color: c.color }} />
                     {c.name}

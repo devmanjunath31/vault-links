@@ -8,6 +8,7 @@ export interface Profile {
   theme: 'light' | 'dark' | 'system'
   accent_color: string
   notify_dead_links: boolean
+  view_density: 'compact' | 'comfortable' | 'cozy'
   created_at: string
   updated_at: string
 }

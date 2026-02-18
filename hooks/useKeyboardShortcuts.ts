@@ -3,25 +3,34 @@
 import { useEffect } from 'react'
 
 interface ShortcutRefs {
-  urlInputRef: React.RefObject<HTMLInputElement | null>
   searchInputRef: React.RefObject<HTMLInputElement | null>
+  onOpenPalette: () => void
+  onOpenCapture: () => void
 }
 
 /**
  * Global keyboard shortcuts:
- *  Cmd/Ctrl+K  → focus URL input (add bookmark)
- *  /           → focus search  (only when not already in an input)
- *  Escape      → blur focused element
+ *  Cmd/Ctrl+K        → open command palette
+ *  Cmd/Ctrl+Shift+B  → open quick capture modal
+ *  /                 → focus search (only when not already in an input)
+ *  Escape            → blur focused element
  */
-export function useKeyboardShortcuts({ urlInputRef, searchInputRef }: ShortcutRefs) {
+export function useKeyboardShortcuts({ searchInputRef, onOpenPalette, onOpenCapture }: ShortcutRefs) {
   useEffect(() => {
     function handler(e: KeyboardEvent) {
       const tag = (e.target as HTMLElement).tagName
 
-      // Cmd/Ctrl+K — always focus URL input
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      // Cmd/Ctrl+K — open command palette
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === 'k') {
         e.preventDefault()
-        urlInputRef.current?.focus()
+        onOpenPalette()
+        return
+      }
+
+      // Cmd/Ctrl+Shift+B — open capture modal
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'b' || e.key === 'B')) {
+        e.preventDefault()
+        onOpenCapture()
         return
       }
 
@@ -40,5 +49,5 @@ export function useKeyboardShortcuts({ urlInputRef, searchInputRef }: ShortcutRe
 
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [urlInputRef, searchInputRef])
+  }, [searchInputRef, onOpenPalette, onOpenCapture])
 }
