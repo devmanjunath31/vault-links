@@ -1,4 +1,4 @@
-# Smart Bookmarks
+# Vault Links
 
 A production-quality bookmark manager built with Next.js 16 and Supabase.
 

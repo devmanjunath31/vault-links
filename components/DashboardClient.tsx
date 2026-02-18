@@ -70,6 +70,7 @@ export default function DashboardClient({
       <div className="flex gap-6 items-start">
         <CollectionsSidebar
           collections={initialCollections}
+          bookmarks={bookmarks}
           activeCollectionId={activeCollectionId}
           onSelect={setActiveCollectionId}
         />

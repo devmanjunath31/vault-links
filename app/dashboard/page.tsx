@@ -60,7 +60,7 @@ export default async function DashboardPage() {
               </svg>
             </div>
             <span className="font-semibold text-slate-900 dark:text-slate-100 tracking-tight">
-              Smart Bookmarks
+              Vault Links
             </span>
           </div>
 

@@ -58,7 +58,7 @@ export default function LoginPage() {
             </div>
             <div className="text-center">
               <h1 className="text-2xl font-bold text-white tracking-tight">
-                Smart Bookmarks
+                Vault Links
               </h1>
               <p className="text-slate-400 text-sm mt-1.5">
                 Your personal web, organized.
@@ -91,7 +91,7 @@ export default function LoginPage() {
           {/* Divider */}
           <div className="flex items-center gap-3 my-6">
             <div className="flex-1 h-px bg-white/10" />
-            <span className="text-xs text-slate-500">Why Smart Bookmarks?</span>
+            <span className="text-xs text-slate-500">Why Vault Links?</span>
             <div className="flex-1 h-px bg-white/10" />
           </div>
 

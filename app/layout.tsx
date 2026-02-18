@@ -8,7 +8,7 @@ import type { Profile } from '@/types/profile'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Smart Bookmarks',
+  title: 'Vault Links',
   description: 'Save and organize the web, your way.',
 }
 
