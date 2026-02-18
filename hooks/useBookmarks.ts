@@ -4,11 +4,11 @@
  * useBookmarks
  *
  * Encapsulates all Supabase Realtime subscription logic for the bookmarks table.
- * Keeps BookmarkList a pure presentational concern — it just renders what this
- * hook gives it and calls removeBookmark on optimistic delete.
+ * Keeps BookmarkList a pure presentational concern.
  *
- * Filtering by user_id on the server-side channel prevents cross-user data leaks
- * even if RLS is misconfigured; defence in depth.
+ * Handles INSERT / UPDATE / DELETE events from Postgres Realtime.
+ * Filtering by user_id on the channel prevents cross-user data leaks
+ * even if RLS is misconfigured — defence in depth.
  */
 
 import { useEffect, useState, useCallback } from 'react'
@@ -19,9 +19,7 @@ export function useBookmarks(initialBookmarks: Bookmark[], userId: string) {
   const [bookmarks, setBookmarks] = useState<Bookmark[]>(initialBookmarks)
 
   useEffect(() => {
-    // Create the client inside the effect so it is never a dependency.
-    // Putting a new object reference in the dep array would cause the effect
-    // to tear down and re-subscribe on every render, breaking Realtime.
+    // Create the client inside the effect — never a stale dependency reference
     const supabase = createClient()
 
     const channel = supabase
@@ -37,6 +35,11 @@ export function useBookmarks(initialBookmarks: Bookmark[], userId: string) {
         (payload) => {
           if (payload.eventType === 'INSERT') {
             setBookmarks((prev) => [payload.new as Bookmark, ...prev])
+          } else if (payload.eventType === 'UPDATE') {
+            const updated = payload.new as Bookmark
+            setBookmarks((prev) =>
+              prev.map((b) => (b.id === updated.id ? updated : b))
+            )
           } else if (payload.eventType === 'DELETE') {
             const deletedId = (payload.old as { id: string }).id
             setBookmarks((prev) => prev.filter((b) => b.id !== deletedId))
@@ -48,12 +51,18 @@ export function useBookmarks(initialBookmarks: Bookmark[], userId: string) {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [userId]) // userId is the only true external dependency
+  }, [userId])
 
-  // Stable reference — safe to pass as a prop without triggering re-renders
+  // Optimistic local update — avoids a round-trip for pin/read toggles
+  const updateBookmark = useCallback((id: string, patch: Partial<Bookmark>) => {
+    setBookmarks((prev) =>
+      prev.map((b) => (b.id === id ? { ...b, ...patch } : b))
+    )
+  }, [])
+
   const removeBookmark = useCallback((id: string) => {
     setBookmarks((prev) => prev.filter((b) => b.id !== id))
   }, [])
 
-  return { bookmarks, removeBookmark }
+  return { bookmarks, updateBookmark, removeBookmark }
 }
