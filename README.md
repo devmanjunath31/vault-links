@@ -1,131 +1,237 @@
 # Vault Links
 
-A production-quality bookmark manager built with Next.js 16 and Supabase.
+> Save the web. Find it later.
 
-**Live demo:** _[add your Vercel URL here]_
+A fast, private, and beautifully designed bookmark manager. Stop losing great articles in a sea of open tabs — Vault Links gives you one place to save, tag, and rediscover everything that matters.
+
+**Live:** [vault-links-orcin.vercel.app](https://vault-links-orcin.vercel.app)
+**GitHub:** [github.com/devmanjunath31/vault-links](https://github.com/devmanjunath31/vault-links)
+
+---
+
+## Features
+
+### Save & Enrich
+- **Auto-fetch metadata** — paste a URL and the title, OG image, description, and reading time are fetched automatically
+- **Reading time estimate** — know how long an article takes before you open it
+- **Smart auto-tags** — domains like GitHub, YouTube, Medium, and Reddit get tagged for you
+- **URL normalization** — strips 24+ tracking parameters (UTM, fbclid, gclid, etc.) on save
+- **Duplicate detection** — warns you before saving the same URL twice
+- **Inline notes** — add personal notes to any bookmark, auto-saved on blur
+
+### Organize
+- **Collections** — group bookmarks into named, color-coded folders
+- **Tags** — multi-tag support with chip input; press Enter or comma to add
+- **Pin bookmarks** — pinned items always float to the top
+- **Mark as read** — track reading progress with a visual bar in the sidebar
+
+### Find
+- **Instant search** — searches title, URL, and tags as you type
+- **Command palette** (`Cmd+K`) — spotlight-style search across all bookmarks with quick actions
+- **Tag filter pills** — click any tag to filter the list
+- **Unread filter** — show only bookmarks you haven't read yet
+- **Quick reads filter** — show only bookmarks under 5 minutes
+- **Sort options** — Newest, Oldest, A→Z, Most visited, Shortest read
+- **Staleness indicator** — highlights bookmarks older than 180 days you've never opened
+
+### View & Export
+- **Grid / List view** — toggle between card grid and compact list
+- **Density control** — S / M / L card sizes (compact, comfortable, cozy)
+- **OG image previews** — rich preview cards with cover images
+- **CSV export** — download all bookmarks as a spreadsheet
+
+### Power
+- **Quick capture** (`Cmd+Shift+B`) — minimal URL save overlay, auto-closes on success
+- **Weekly digest** — dismissable per-week summary of what you saved and haven't read
+- **Keyboard shortcuts** — `/` focuses search, `Esc` closes modals
+- **Real-time sync** — changes reflect instantly across all open tabs via Supabase Realtime
+
+### Account & Settings
+- **Google OAuth** — one-click sign-in, no password needed
+- **Appearance** — light / dark / system theme, custom accent color, card density
+- **Sidebar stats** — total bookmarks, read %, this week count
+- **Delete account** — permanently removes all bookmarks, collections, profile, and auth record
 
 ---
 
 ## Tech Stack
 
-- **Next.js 16** (App Router, Server Components)
-- **Supabase** (`@supabase/ssr` for session management)
-- **Tailwind CSS v4**
-- **TypeScript** (strict mode)
-- **Lucide React** (icons)
+| Layer | Technology |
+|---|---|
+| Framework | [Next.js 16](https://nextjs.org) — App Router, Server + Client Components |
+| Styling | [Tailwind CSS v4](https://tailwindcss.com) |
+| Database & Auth | [Supabase](https://supabase.com) — PostgreSQL, RLS, Realtime |
+| Auth Provider | Google OAuth via Supabase Auth |
+| Language | TypeScript (strict mode) |
+| Icons | [Lucide React](https://lucide.dev) |
+| Deployment | [Vercel](https://vercel.com) |
+
+---
+
+## Project Structure
+
+```
+smart-bookmark/
+├── app/
+│   ├── dashboard/page.tsx        # Main dashboard (server component, fetches initial data)
+│   ├── settings/page.tsx         # Settings page
+│   ├── login/page.tsx            # Login page with Google OAuth
+│   ├── auth/callback/route.ts    # Supabase OAuth callback handler
+│   └── api/
+│       ├── fetch-title/route.ts  # URL metadata + reading time fetcher
+│       └── delete-account/       # Account deletion via service role key
+├── components/
+│   ├── DashboardClient.tsx       # Client shell — owns bookmark state + modals
+│   ├── BookmarkList.tsx          # Filtered, sorted bookmark grid/list + toolbar
+│   ├── BookmarkCard.tsx          # Card (density variants, notes, staleness badge)
+│   ├── AddBookmarkForm.tsx       # URL save form with auto-tag + collection picker
+│   ├── CollectionsSidebar.tsx    # Sticky sidebar — stats, collections, actions
+│   ├── CommandPalette.tsx        # Cmd+K spotlight palette
+│   ├── CaptureModal.tsx          # Cmd+Shift+B quick capture overlay
+│   ├── WeeklyDigest.tsx          # Per-week dismissable digest banner
+│   └── settings/                 # Profile, Appearance, Notifications panels
+├── hooks/
+│   ├── useBookmarks.ts           # Bookmark state + Supabase Realtime subscription
+│   └── useKeyboardShortcuts.ts   # Global keyboard shortcut bindings
+├── lib/
+│   ├── supabase/                 # createClient (browser) + createClient (server)
+│   └── url-normalize.ts          # URL normalization + domain auto-tagging map
+└── types/
+    ├── bookmark.ts
+    ├── collection.ts
+    └── profile.ts
+```
+
+---
+
+## Architecture Notes
+
+### Server vs Client split
+Server components (`app/dashboard/page.tsx`) fetch the session and all initial data at request time — no loading spinners, instant first paint. Client components (`DashboardClient`, `BookmarkList`, `BookmarkCard`) handle interactivity, optimistic updates, and Realtime subscriptions. `useBookmarks` is lifted to `DashboardClient` so the command palette and sidebar stats can both access the full bookmark list.
+
+### Optimistic updates
+When a bookmark is saved, `AddBookmarkForm` uses `.select().single()` to get the inserted row back immediately and calls `addBookmark()` to prepend it to state — no waiting for the Realtime event. The Realtime INSERT handler deduplicates by `id`, so multi-tab sync still works without double-adding.
+
+### RLS enforcement
+Every table has Row Level Security enabled. Users can only read and write their own rows, even if the anon key is exposed in the browser.
+
+```sql
+create policy "own bookmarks" on bookmarks for all using (auth.uid() = user_id);
+```
+
+Account deletion uses the service role key (server-only API route) to bypass RLS and delete all user data before removing the auth record.
 
 ---
 
 ## Local Setup
 
+### 1. Clone and install
+
 ```bash
-git clone <your-repo-url>
-cd smart-bookmark
-
-# Install dependencies
+git clone https://github.com/devmanjunath31/vault-links.git
+cd vault-links
 npm install
+```
 
-# Copy env template and fill in your values
-cp .env.local.example .env.local
+### 2. Create a Supabase project
 
-# Start development server
+Go to [supabase.com](https://supabase.com), create a new project, then run this SQL:
+
+```sql
+create table profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  full_name text, avatar_url text, email text, username text, bio text,
+  theme text default 'system' check (theme in ('light','dark','system')),
+  accent_color text default '#3b82f6',
+  notify_dead_links boolean default false,
+  view_density text default 'comfortable' check (view_density in ('compact','comfortable','cozy')),
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create table collections (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete cascade not null,
+  name text not null,
+  color text default '#6366f1',
+  created_at timestamptz default now()
+);
+
+create table bookmarks (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete cascade not null,
+  collection_id uuid references collections(id) on delete set null,
+  url text not null,
+  title text not null,
+  description text, og_image text, favicon_url text,
+  tags text[] default '{}',
+  notes text,
+  is_read boolean default false,
+  is_pinned boolean default false,
+  click_count integer default 0,
+  reading_time_minutes integer,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+alter table profiles enable row level security;
+alter table collections enable row level security;
+alter table bookmarks enable row level security;
+
+create policy "own profile"     on profiles    for all using (auth.uid() = id);
+create policy "own collections" on collections for all using (auth.uid() = user_id);
+create policy "own bookmarks"   on bookmarks   for all using (auth.uid() = user_id);
+
+-- Enable Realtime
+alter publication supabase_realtime add table bookmarks;
+```
+
+### 3. Set environment variables
+
+Create `.env.local`:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+```
+
+All three keys are in: Supabase Dashboard → Settings → API
+
+### 4. Configure Google OAuth
+
+1. [Google Cloud Console](https://console.cloud.google.com) → APIs & Services → Credentials → Create OAuth 2.0 Client ID (Web)
+2. Add your domain to Authorized JavaScript Origins and Authorized Redirect URIs (`/auth/callback`)
+3. Supabase Dashboard → Authentication → Providers → Google → paste Client ID + Secret
+4. Supabase Dashboard → Authentication → URL Configuration → set Site URL + add Redirect URL
+
+### 5. Run
+
+```bash
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+---
 
-### Environment Variables
+## Deployment (Vercel)
 
-| Variable | Description |
-|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | Your Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Your Supabase anon/public key |
+1. Push to GitHub
+2. Import the repo at [vercel.com](https://vercel.com)
+3. Add the three environment variables from step 3
+4. Deploy, then update Google OAuth and Supabase URL config with your production URL
 
 ---
 
-## Architecture
+## Contributing
 
-### Server vs Client Component Split
+Open for collaboration! If Vault Links helps you, a star on GitHub means a lot.
 
-- **Server Components** (`app/page.tsx`, `app/dashboard/page.tsx`): fetch session and initial data at request time — no loading spinners, instant first paint.
-- **Client Components** (`BookmarkList`, `AddBookmarkForm`, `BookmarkCard`, `UserAvatar`): handle interactivity, form state, realtime subscriptions, and optimistic UI.
-- Initial bookmark data flows from the server → `BookmarkList` as props, so the page renders fully on first load without a client-side fetch.
-
-### How RLS Enforces Bookmark Privacy
-
-Supabase Row Level Security policies ensure every DB query is scoped to the authenticated user:
-
-```sql
-CREATE POLICY "select_own" ON bookmarks FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "insert_own" ON bookmarks FOR INSERT WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "delete_own" ON bookmarks FOR DELETE USING (auth.uid() = user_id);
-```
-
-Even if the anon key is exposed in the browser, users can only ever read/write their own rows.
-
-### How Supabase Realtime Works Here
-
-`BookmarkList` subscribes to `postgres_changes` on the `bookmarks` table, filtered by `user_id`:
-
-```ts
-supabase.channel('bookmarks-channel')
-  .on('postgres_changes', {
-    event: '*',
-    schema: 'public',
-    table: 'bookmarks',
-    filter: `user_id=eq.${userId}`,
-  }, handler)
-  .subscribe()
-```
-
-On `INSERT`, the new bookmark is prepended to state. On `DELETE`, it's removed. The filter prevents receiving another user's events.
-
-### Why `@supabase/ssr` Over Legacy Packages
-
-`@supabase/auth-helpers` had limitations with the Next.js App Router — it couldn't correctly read/write cookies in Server Components and middleware simultaneously. `@supabase/ssr` is the official replacement: it exposes `getAll`/`setAll` cookie callbacks that integrate cleanly with both `next/headers` (server side) and `NextRequest`/`NextResponse` (middleware), keeping the session in sync across the full request lifecycle.
+- Bug reports → open an issue
+- Feature ideas → open a discussion
+- Pull requests → welcome
 
 ---
 
-## Problems I Ran Into
+## License
 
-### Supabase session not persisting in App Router
-
-**Problem:** After OAuth login, the session cookie wasn't being passed to Server Components — `getUser()` always returned `null`.
-
-**Fix:** `@supabase/ssr` + middleware that reads cookies from the request AND writes them back on the response. The key is that middleware must both spread `request.cookies` into the Supabase client AND call `supabaseResponse.cookies.set(...)` for every cookie update.
-
-### Realtime not firing
-
-**Problem:** Added a realtime subscription but INSERT/DELETE events never arrived.
-
-**Fix:** Realtime is off by default per-table. Go to **Database → Replication** in the Supabase dashboard and toggle replication on for the `bookmarks` table.
-
-### Google OAuth redirect URI mismatch
-
-**Problem:** OAuth worked locally but returned a `redirect_uri_mismatch` error after deploying to Vercel.
-
-**Fix:** Add the production URL to two places:
-1. **Google Cloud Console** → Credentials → OAuth 2.0 Client → Authorized redirect URIs → add `https://your-app.vercel.app/auth/callback`
-2. **Supabase** → Authentication → URL Configuration → add `https://your-app.vercel.app` to Site URL and Redirect URLs
-
----
-
-## Vercel Deployment
-
-1. Push your code to GitHub
-2. Go to [vercel.com](https://vercel.com) → **Add New Project** → import your repo
-3. Add environment variables in the Vercel dashboard:
-   - `NEXT_PUBLIC_SUPABASE_URL`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-4. Deploy — note your production URL (e.g. `https://your-app.vercel.app`)
-5. Add `https://your-app.vercel.app/auth/callback` to Google Cloud Console OAuth redirect URIs
-6. Add `https://your-app.vercel.app` to Supabase → Authentication → URL Configuration
-
----
-
-## If I Had More Time
-
-- **Bookmark folders / collections** — group bookmarks by topic with drag-and-drop ordering
-- **Browser extension** — one-click bookmarking from any page without opening the app
-- **Bulk import** — import from Chrome/Firefox bookmarks HTML export
-- **Search** — full-text search across titles and URLs, powered by Postgres `tsvector`
+MIT
