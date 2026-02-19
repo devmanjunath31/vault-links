@@ -55,7 +55,7 @@ export default function DashboardClient({
   const [isCaptureOpen, setIsCaptureOpen] = useState(false)
   const [isAddOpen, setIsAddOpen] = useState(false)
 
-  const { bookmarks, updateBookmark, removeBookmark } = useBookmarks(initialBookmarks, userId)
+  const { bookmarks, addBookmark, updateBookmark, removeBookmark } = useBookmarks(initialBookmarks, userId)
 
   const openPalette = useCallback(() => setIsPaletteOpen(true), [])
   const openCapture = useCallback(() => setIsCaptureOpen(true), [])
@@ -163,6 +163,7 @@ export default function DashboardClient({
               urlInputRef={urlInputRef}
               collections={initialCollections}
               activeCollectionId={activeCollectionId}
+              onAdd={addBookmark}
               onSuccess={() => setIsAddOpen(false)}
             />
           </div>

@@ -18,18 +18,19 @@ export async function DELETE() {
     )
   }
 
-  // Delete user data in order (respects FK constraints if cascade isn't set)
-  await supabase.from('bookmarks').delete().eq('user_id', user.id)
-  await supabase.from('collections').delete().eq('user_id', user.id)
-  await supabase.from('profiles').delete().eq('id', user.id)
-
-  // Delete the auth account using the service role key
+  // Use admin client for all deletions — bypasses RLS so data is actually removed
   const admin = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     serviceKey,
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
+  // Delete user data in FK-safe order
+  await admin.from('bookmarks').delete().eq('user_id', user.id)
+  await admin.from('collections').delete().eq('user_id', user.id)
+  await admin.from('profiles').delete().eq('id', user.id)
+
+  // Delete the auth account
   const { error } = await admin.auth.admin.deleteUser(user.id)
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })

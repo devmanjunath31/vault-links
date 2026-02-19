@@ -34,7 +34,11 @@ export function useBookmarks(initialBookmarks: Bookmark[], userId: string) {
         },
         (payload) => {
           if (payload.eventType === 'INSERT') {
-            setBookmarks((prev) => [payload.new as Bookmark, ...prev])
+            const incoming = payload.new as Bookmark
+            // Dedup: optimistic update may have already added this row
+            setBookmarks((prev) =>
+              prev.some((b) => b.id === incoming.id) ? prev : [incoming, ...prev]
+            )
           } else if (payload.eventType === 'UPDATE') {
             const updated = payload.new as Bookmark
             setBookmarks((prev) =>
@@ -53,6 +57,14 @@ export function useBookmarks(initialBookmarks: Bookmark[], userId: string) {
     }
   }, [userId])
 
+  // Optimistic add — call immediately after a successful insert so the row
+  // appears instantly without waiting for the Realtime event.
+  const addBookmark = useCallback((bookmark: Bookmark) => {
+    setBookmarks((prev) =>
+      prev.some((b) => b.id === bookmark.id) ? prev : [bookmark, ...prev]
+    )
+  }, [])
+
   // Optimistic local update — avoids a round-trip for pin/read toggles
   const updateBookmark = useCallback((id: string, patch: Partial<Bookmark>) => {
     setBookmarks((prev) =>
@@ -64,5 +76,5 @@ export function useBookmarks(initialBookmarks: Bookmark[], userId: string) {
     setBookmarks((prev) => prev.filter((b) => b.id !== id))
   }, [])
 
-  return { bookmarks, updateBookmark, removeBookmark }
+  return { bookmarks, addBookmark, updateBookmark, removeBookmark }
 }

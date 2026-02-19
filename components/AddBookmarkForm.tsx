@@ -7,12 +7,14 @@ import {
   Plus, Loader2, Link2, AlertTriangle, X, ChevronDown, Folder, ShieldCheck,
 } from 'lucide-react'
 import type { Collection } from '@/types/collection'
+import type { Bookmark } from '@/types/bookmark'
 
 interface AddBookmarkFormProps {
   urlInputRef: React.RefObject<HTMLInputElement | null>
   collections: Collection[]
   activeCollectionId: string | null
   onSuccess?: () => void
+  onAdd?: (bookmark: Bookmark) => void
 }
 
 interface FetchedMeta {
@@ -27,6 +29,7 @@ export default function AddBookmarkForm({
   collections,
   activeCollectionId,
   onSuccess,
+  onAdd,
 }: AddBookmarkFormProps) {
   const [url, setUrl]                   = useState('')
   const [title, setTitle]               = useState('')
@@ -147,23 +150,29 @@ export default function AddBookmarkForm({
     let domain = ''
     try { domain = new URL(normalized).hostname } catch { /* noop */ }
 
-    const { error: insertError } = await supabase.from('bookmarks').insert({
-      user_id: user.id,
-      url: normalized,
-      title: title.trim(),
-      favicon_url: domain
-        ? `https://www.google.com/s2/favicons?domain=${domain}&sz=32`
-        : null,
-      og_image: meta?.og_image ?? null,
-      description: meta?.description ?? null,
-      tags,
-      collection_id: collectionId,
-      reading_time_minutes: meta?.reading_time_minutes ?? null,
-    })
+    const { data: inserted, error: insertError } = await supabase
+      .from('bookmarks')
+      .insert({
+        user_id: user.id,
+        url: normalized,
+        title: title.trim(),
+        favicon_url: domain
+          ? `https://www.google.com/s2/favicons?domain=${domain}&sz=32`
+          : null,
+        og_image: meta?.og_image ?? null,
+        description: meta?.description ?? null,
+        tags,
+        collection_id: collectionId,
+        reading_time_minutes: meta?.reading_time_minutes ?? null,
+      })
+      .select()
+      .single()
 
     if (insertError) {
       setError('Failed to save bookmark. Please try again.')
     } else {
+      // Optimistic update — don't wait for Realtime
+      if (inserted) onAdd?.(inserted as import('@/types/bookmark').Bookmark)
       setUrl('')
       setTitle('')
       setTags([])
