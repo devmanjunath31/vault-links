@@ -21,6 +21,8 @@ interface CollectionsSidebarProps {
   bookmarks: Bookmark[]
   activeCollectionId: string | null
   onSelect: (id: string | null) => void
+  onCollectionAdd: (c: Collection) => void
+  onCollectionDelete: (id: string) => void
 }
 
 export default function CollectionsSidebar({
@@ -28,8 +30,9 @@ export default function CollectionsSidebar({
   bookmarks,
   activeCollectionId,
   onSelect,
+  onCollectionAdd,
+  onCollectionDelete,
 }: CollectionsSidebarProps) {
-  const [localCollections, setLocalCollections] = useState<Collection[]>(collections)
   const [isAdding, setIsAdding] = useState(false)
   const [newName, setNewName] = useState('')
   const [newColor, setNewColor] = useState(PRESET_COLORS[0])
@@ -64,7 +67,7 @@ export default function CollectionsSidebar({
       .single()
 
     if (!error && data) {
-      setLocalCollections((prev) => [...prev, data as Collection])
+      onCollectionAdd(data as Collection)
     }
     setNewName('')
     setNewColor(PRESET_COLORS[0])
@@ -74,7 +77,7 @@ export default function CollectionsSidebar({
 
   async function handleDelete(id: string, e: React.MouseEvent) {
     e.stopPropagation()
-    setLocalCollections((prev) => prev.filter((c) => c.id !== id))
+    onCollectionDelete(id)
     if (activeCollectionId === id) onSelect(null)
     await supabase.from('collections').delete().eq('id', id)
   }
@@ -132,7 +135,7 @@ export default function CollectionsSidebar({
         </button>
       </div>
 
-      {localCollections.map((c) => (
+      {collections.map((c) => (
         <button
           key={c.id}
           onClick={() => onSelect(c.id)}

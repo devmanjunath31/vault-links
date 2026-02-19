@@ -55,7 +55,17 @@ export default function DashboardClient({
   const [isCaptureOpen, setIsCaptureOpen] = useState(false)
   const [isAddOpen, setIsAddOpen] = useState(false)
 
+  const [collections, setCollections] = useState<Collection[]>(initialCollections)
+
   const { bookmarks, addBookmark, updateBookmark, removeBookmark } = useBookmarks(initialBookmarks, userId)
+
+  const addCollection = useCallback((c: Collection) => {
+    setCollections((prev) => [...prev, c])
+  }, [])
+
+  const removeCollection = useCallback((id: string) => {
+    setCollections((prev) => prev.filter((c) => c.id !== id))
+  }, [])
 
   const openPalette = useCallback(() => setIsPaletteOpen(true), [])
   const openCapture = useCallback(() => setIsCaptureOpen(true), [])
@@ -89,10 +99,12 @@ export default function DashboardClient({
       <div className="flex gap-6 items-start">
         <div className="sticky top-14 self-start shrink-0 max-h-[calc(100vh-3.5rem)] overflow-y-auto">
           <CollectionsSidebar
-            collections={initialCollections}
+            collections={collections}
             bookmarks={bookmarks}
             activeCollectionId={activeCollectionId}
             onSelect={setActiveCollectionId}
+            onCollectionAdd={addCollection}
+            onCollectionDelete={removeCollection}
           />
         </div>
 
@@ -161,7 +173,7 @@ export default function DashboardClient({
             </div>
             <AddBookmarkForm
               urlInputRef={urlInputRef}
-              collections={initialCollections}
+              collections={collections}
               activeCollectionId={activeCollectionId}
               onAdd={addBookmark}
               onSuccess={() => setIsAddOpen(false)}
